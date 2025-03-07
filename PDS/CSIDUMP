@@ -1,0 +1,517 @@
+CSIDUMP  CSECT
+         PRINT NOGEN
+         COPY  IGGCSINA
+         PRINT GEN
+A        DSECT                     GENERIC CSI ENTRY
+AFLAG    DS    B                   FLAGS
+ATYPE    DS    C                   ENTRY TYPE
+ANAME    DS    CL44                ENTRY NAME
+ALEN     DS    H                   LENGTH OF REMAINING DATA IN THE    ->
+                                    ENTRY INCLUDING THIS FIELD
+CSIDUMP  CSECT
+         USING *,12                ESTABLISH CSIDUMP ADDRESSABILITY
+         SAVE  (14,12),,*          SAVE REGISTERS
+         LR    12,15               PREPARE
+         LR    15,13                A
+         LA    13,SAVEAREA           NEW
+         ST    15,4(,13)              SAVE
+         ST    13,8(,15)               AREA
+         L     2,0(,1)             LOAD ADDRESS OF PARM TEXT
+         LH    3,0(,2)             LOAD BYTES IN PARM TEXT
+         LTR   3,3                 ANY PARM TEXT?
+         BZ    SKIPMOVE            NO
+         LA    2,2(,2)             COMPUTE ADDRESS OF PARM TEXT
+         ICM   3,B'1000',=C' '     LOAD FILL CHARACTER
+         LA    14,CSIFILTK-CSIFIELD+SELECT  COMPUTE ADDRESS OF FILTER
+         LA    15,L'CSIFILTK       LOAD LENGTH
+         MVCL  14,2                COPY PARM TEXT TO CSIFILTK
+SKIPMOVE OPEN  MF=(E,OPARM)        OPEN SYSPRINT
+         LA    0,SELECTSZ          LOAD SIZE OF CSI00 SELECTION PARMS
+         LA    1,SELECT            COMPUTE ADDRESS OF CSI00 SELECTION
+         BRAS  14,DUMPSTOR         DUMP IT
+         LINK  SF=(E,LINKPARM),MF=(E,CSIPARM)  RUN IGGCSI00
+         ST    15,CSI00RC          SAVE IGGCSI00 RC
+         LTR   15,15               OK?
+         JZ    DUMPSEL             YES
+         LA    1,FMT01             LIST THE RC &
+         BRAS  14,FMTLINE           IGGCSI00 RESON CODE
+         J     EXIT
+DUMPSEL  DC    0H'0'
+         LA    0,64                LOAD BYTES TO DUMP
+         L     1,CSIPARM+8         LOAD ADDRESS
+         BRAS  14,DUMPSTOR         DUMP FIRST 64 BYTES OF RETURN AREA
+*        L     1,CSIPARM+8         LOAD ADDRESS OF THE RETURN AREA
+*        L     0,8(,1)             LOAD USED BYTES IN RETURN AREA
+*        BRAS  14,DUMPSTOR         DUMP THE RETURN AREA
+         L     3,CSIPARM+8         LOAD ADDRESS OGF THE RETURN AREA
+         N     3,=A(X'7FFFFFFF')   ISOLATE THE 31-BIT ADDRESS
+         L     4,8(,3)             LOAD USED BYTES IN RETURN AREA
+         AR    4,3                 COMPUTE END OF RETURN AREA
+         LA    3,64(,3)            COMPUTE ADDRESS OF FIRST ENTRY
+         USING A,3                 ESTABLISH ADDRESSABILITY
+NEXTA    LH    5,ALEN              LOAD DATA BYTES
+         LA    0,ALEN-A(,5)        COMPUTE LENGTH OF THE ENTRY
+         LR    1,3                 DUMP THE ENTRY
+         BRAS  14,DUMPSTOR
+         LA    3,ALEN(5)           COMPUTE ADDRESS OF NEXT ENTRY
+         CR    3,4                 NEXT ENTRY IN RETURN AREA?
+         BL    NEXTA               YES
+         CLOSE MF=(E,CPARM)        CLOSE SYSPRINT
+EXIT     L     13,4(,13)           LOAD ADDRESS OF THE HIGHER SAVE AREA
+         L     15,CSI00RC          LOAD THE RETURN CODE
+         RETURN (14,12),RC=(15)    RESTORE REGISTERS & RETURN
+LINKPARM LINK  SF=L,EP=IGGCSI00
+         EJECT
+         CNOP  2,8
+DUMPSTOR BASR  15,0
+         SAVE  (14,12),,DUMPSTOR   SAVE REGISTERS
+         LR    15,13               PREPARE
+         LA    13,72(,13)           A NEW
+         ST    13,8(,15)             SAVE
+         ST    15,4(,13)              AREA
+         LR    3,0                 BYTES TO DUMP TO REG 3
+         LR    2,1                 ADDRESS TO REG 2
+         N     2,=A(X'7FFFFFFF')   ISOLATE THE 31-BUIT ADDRESS
+         ALR   3,2                 COMPUTE END OF DUMPED AREA
+         LR    4,2                 ADDRESS TO REG 4
+DS0100   LR    0,4                 COMPUTE OFFSET IN AREA
+         SR    0,2
+         STH   0,12(,13)           SAVE OFFSET
+         UNPK  DSHEXO(5),12(3,13)  CONVERT OFFSET TO HEX DIGITS
+         TR    DSHEXO,DSHEXTAB
+         MVC   DSDECO,=X'402020202120'  CONVERT OFFSET
+         CVD   0,64(,13)                 TO DECIMAL DIGITS
+         ED    DSDECO,72-3(13)
+         LA    0,16(,4)            COMPUTE ADDRESS OF NEXT LINE IN DUMP
+         CR    0,3                 NEXT LINE > END OF DUMP?
+         BNL   DS0200              YES
+         MVC   DSTXT,0(4)          COPY 16 BYTES TO DSTXT
+         UNPK  DSWD1(9),DSTXT+0(5) CONVERT 4
+         UNPK  DSWD2(9),DSTXT+4(5)  WORDS
+         UNPK  DSWD3(9),DSTXT+8(5)   TO
+         UNPK  DSWD4(9),DSTXT+12(5)   HEX
+         TR    DSWD1,DSHEXTAB          DIGITS
+         TR    DSWD2,DSHEXTAB
+         TR    DSWD3,DSHEXTAB
+         TR    DSWD4,DSHEXTAB
+         MVI   DSWD1+8,C' '
+         MVI   DSWD2+8,C' '
+         MVI   DSWD3+8,C' '
+         MVI   DSWD4+8,C' '
+         LA    4,16(,4)            COMPUTE START OF NEXT LINE
+         B     DS0400              GO PRINT THE LINE
+DS0200   MVC   DSWD1,=CL8' '       CLEAR DSLINE
+         MVC   DSWD2,=CL8' '
+         MVC   DSWD3,=CL8' '
+         MVC   DSWD4,=CL8' '
+         MVC   DSTXT(8),=CL8' '
+         MVC   DSTXT+8(8),=CL8' '
+         LR    0,3                 COMPUTE REMAINING BYTES TO DUMP
+         SR    0,4
+* PREPARE THE REMAINDER OF THE DUMP LINE ONE BYTE AT A TIME
+         LA    1,DSTAB             COMPUTE ADDRESS OF DSTAB
+DS0300   LH    14,0(,1)            LOAD DSLINE OFFSET FOR HEX DIGITS
+         LH    15,2(,1)            LOAD DSLINE OFFSET FOR TEXT BYTE
+         LA    14,DSLINE(14)       COMPUTE HEX DIGITS ADDRESS
+         LA    15,DSLINE(15)       COMPUTE TEXT BYTE ADDREESS
+         MVC   0(1,15),0(4)        COPY TEXT BYTE TO DSTXT
+         UNPK  0(3,14),0(2,15)     CONVERT BYTE TO
+         TR    0(2,14),DSHEXTAB     TO HEX DIGITS
+         MVI   2(14),C' '
+         LA    4,1(,4)             COMPUTE ADDRESS OF NEXT BYTE
+         LA    1,4(,1)             COMPUTE ADDRESS OF NEXT DSTAB ENTRY
+         BCT   0,DS0300
+DS0400   TR    DSTXT,DSTRTAB       CONVERT NON-PRINTABLES IN DSTXT TO .
+         LA    1,DSLINE            PRINT THE LINE
+         BAS   14,OUTEDIT
+         CR    4,3                 DONE?
+         BL    DS0100              NO
+         L     13,4(,13)           LOAD ADDRESS OF THE HIGHER SAVE AREA
+         RETURN (14,12)            RESTORE REGISTERS & RETURN
+         EJECT
+         CNOP  2,8
+FMTLINE  BASR  15,0
+         SAVE  (14,0),,FMTLINE     SAVE REGISTERS
+         LR    15,13               SAVE AREA ADDRESS TO REG 15
+         LA    13,72(,13)          COMPUTE ADDRESS OF NEXT SAVE AREA
+         ST    15,4(,13)           ADD NEW SAVE AREA
+         ST    13,8(,15)            TO THE SAVE AREA CHAIN
+         LA    0,FMTWORK           COMPUTE ADDRESS OF THE MICROFMT    ->
+                                    WORK AREA
+         BRAS  14,MICROFMT         FORMAT THE LINE
+         L     13,4(,13)           LOAD ADDRESS OF THE HIGHER SAVE AREA
+         LM    14,0,12(13)         RESTORE REGISTERS 14 THROUGH 0
+         J     OUTEDIT             WRITE THE FORMATTED LINE
+         EJECT
+         CNOP  2,8
+OUTEDIT  BASR  15,0
+         SAVE  (14,4),,OUTEDIT     SAVE REGISTERS
+         LR    15,13               SAVE AREA ADDRESS TO REG 15
+         LA    13,72(,13)          PREPARE
+         ST    15,4(,13)            NEW
+         ST    13,8(,15)             SAVE AREA
+         SR    3,3                 INIT REGS 3 & 4
+         SR    4,4
+         LR    2,1                 LINE ADDRESS TO REG 2
+         IC    3,4(,1)             LOAD CARRIAGE CONTROL
+         IC    4,ASATAB(3)         LOAD LINES LINE PRINTS
+         AH    4,PAGEPOS           COMPUTE NEW PAGE POSITION
+         CH    4,PAGESIZE          LINE FIT ON PAGE?
+         BNH   OE0100              YES
+         AP    PAGENUM,=P'1'       UPDATE PAGE NUMBER
+         MVC   PAGE#,=X'402020202120'  CONVERT PAGE NUMBER
+         ED    PAGE#,PAGENUM            TO DECIMAL DOGOTS
+         PUT   PRINT,PAGEHDR       PRINT THE PAGE HEADER
+         MVI   4(2),C'0'           RESET CARRIAGE CONTROL
+         LA    4,3                 LOAD CORRECTED PAGE POSITION
+OE0100   STH   4,PAGEPOS           STORE UPDATE PAGE POSITION
+         PUT   PRINT,(2)           WRITE THE LINE
+         STC   3,4(,2)             RESTORE ORIGINAL CARRIAGE CONTROL
+         L     13,4(,13)           LOAD ADDRESS OF THE HIGHER SAVE AREA
+         RETURN (14,4)             RESTORE REGISTERS & RETURN
+         TITLE '                           MICROFMT -- A Basic Message >
+               Formatting Routine'
+***********************************************************************
+*                                                                     *
+* Title -- MICROFMT                                                   *
+*                                                                     *
+* Function / Operation -- MICROFMT is a basic message generator       *
+*   program.  With minor changes, it can be incorporated into a       *
+*   program or it can be used as a standalone program.  It can be     *
+*   called using the BRAS or BRASL instructions, by BAL or BAS, as    *
+*   well "standard" linkage (BALR or BASR).                           *
+*                                                                     *
+* Status / Change Level --                                            *
+*   V1L1 -- June 2010                                                 *
+*    - Binary to hex conversion not being done correctly for input    *
+*      fields longer than 7 bytes                                     *
+*   V1L0 -- April 2010                                                *
+*                                                                     *
+* Calling sequence --                                                 *
+*            LA    0,FMTWORK                                          *
+*            LA    1,FORMAT                                           *
+*            BRAS  14,MICROFMT                                        *
+*            ...                                                      *
+*   FMTWORK  DC    XL200'0'                                           *
+*   FORMAT   DC    -- Format Specifications --                        *
+*                                                                     *
+*   Returns -- Address of generated output line in register 1.        *
+*     All other registers are returned unchanged                      *
+*                                                                     *
+* Format Specification --                                             *
+*   A format consists of two or more field specifications.  There are *
+*   three types of field specifications --                            *
+*   - End of format -- X'FF' or X'00'                                 *
+*   - In line text -- AL1(length),C'in line text'                     *
+*     Length can be 1 to 127                                          *
+*   - Data conversion -- Three types of data conversion are provided  *
+*     . Character, for data areas from 1 to 255 bytes.                *
+*     . Binary to decimal, of unsigned 1, 2 and 3 byte fields, and    *
+*       signed 4 byte fields                                          *
+*     . Binary to hexadecimal, of data areas from 1 to 255 bytes. Two *
+*       output bytes for each input byte                              *
+*     Each data conversion is specified as a multiple byte format --  *
+*     Offset  Bit  Value Purpose                                      *
+*        0     0     1 -- Indicates data conversion                   *
+*        0     1     0 -- Address specified as an in-line 4 byte      *
+*                         address constant                            *
+*        0     1     1 -- Address specified as a 2 byte S type        *
+*                         address                                     *
+*                         The S-con base register can be registers 2  *
+*                         through 13.  Since registers 14, 15, 0 and  *
+*                         are used as link registers, their use in    *
+*                         an S-con is limited.                        *
+*        0    2-7    0 -- Copy text string to output line             *
+*                    1 -- Translate 1 to 4 byte binary to decimal     *
+*                    2 -- Translate 1 to 255 byte binary to           *
+*                         hexadecimal digits                          *
+*                    3 -- Provide input length for an undefined       *
+*                         text or  hexadecimal conversion             *
+*        1    0-7    Input length.                                    *
+*        2    0-7    Output length.  Not used for hex conversion.  If *
+*                    0 is specified, for binary to decimal conversion *
+*                    the output length is the length of the converted *
+*                    number, for character conversion the output      *
+*                    length is the input length with trailing blanks  *
+*                    removed                                          *
+*        3           Data address, as either a 2-bye S type address or*
+*                    a 4 byte address constant.                       *
+*                                                                     *
+* Attributes -- MICROFMT is reenterable, refreshable and reusable.    *
+*   It operates in any key, problem or supervisor state.  It uses no  *
+*   external services or authorized services.  It is not intended to  *
+*   operate in AR mode or the 64-bit addressing mode.  It will        *
+*   operate in the 24-bit addressing mode if the format, work area,   *
+*   and any data referenced in the format is in the 24-bit residence  *
+*   area.                                                             *
+*                                                                     *
+***********************************************************************
+         SPACE 5
+MFMTWORK DSECT
+MFMTWWRK DS    D                   DOUBLE WORD AIGNED 8 BYTE WORK AREA
+*                 ----+----1----+
+MFMTWEWK DS    C' 999999999999999'
+MFMTWLEN DS    AL1,0F              LENGTH FROM FORMAT 3
+MFMTWLNE DS    2AL2                GENERATED OUTPUT LINE
+CSIDUMP  CSECT
+         PUSH  USING
+MICROFMT BASR  15,0                STORE CURRENT ADDRESS IN REG 15
+         USING *,12                ESTABLISH PROGRAM BASE REGISTER
+         USING MFMTWORK,11         ESTABLISH WORK AREA ADDRESSABILITY
+         SAVE  (14,12),,MICROFMT   SAVE REGISTERS
+         LR    12,15               COPY ENTRY POINT ADDRESS TO REG 12
+         LR    11,0                COPY WORK AREA ADDRESS TO REG 11
+         LR    3,1                 COPY ADDRESS OF FORMAT TO REG 3
+         LA    14,MFMTWLNE+4       LOAD START OF TEXT OUTPUT
+MFMT0100 CLI   0(3),X'FF'          TEST IF END OF FORMAT
+         JE    MFMT2400
+         CLI   0(3),0
+         JE    MFMT2400
+         TM    0(3),X'80'          TEST IF DATA CONVERSION
+         JO    MFMT0200            BR IF SO
+         SR    15,15               SET REG 15 = 0
+         IC    15,0(,3)            LOAD LENGTH OF IN-LINE CHARACTER   ->
+                                    STRING
+         LA    0,1(,3)             LOAD START OF IN-LINE CHARACTER    ->
+                                    STRING
+         LR    1,15                COPY LENGTH TO REG 1
+         MVCL  14,0                COPY IN-LINE CHARACTER STRING TO   ->
+                                    NEW LINE
+         LR    3,0                 COPY START OF NEXT FORMAT TO REG 3
+         J     MFMT0100            GO CHECK THE NEXT FORMAT
+MFMT0200 IC    15,0(,3)            LOAD FORMAT TYPE
+         N     15,=A(X'3F')        ISOLATE TYPE
+         CHI   15,3                COMPARE FORMAT TYPE WITH MAX TYPES
+         JH    MFMT2300            BR IF FORMAT TYPE IS BAD
+         SLL   15,2                MULTIPLY TYPE BY 4
+         B     *+4(15)             BR TO JUMP TABLE ENTRY
+         J     MFMT0400            TYPE 0 - CHARACTER
+         J     MFMT0800            TYPE 1 - BINARY TO DECIMAL
+         J     MFMT1200            TYPE 2 -BINARY TO HEXADECIMAL DIGITS
+         J     MFMT0300            TYPE 3 - SAVE LENGTH FOR TYPES 0 & 2
+MFMT0300 LA    1,3(,3)             LOAD ADDRESS OF DATA ADDRESS
+         BRAS  15,MFMT1700         GET THE ADDRESS
+         MVC   MFMTWLEN,0(4)       SAVE THE LENGTH
+         J     MFMT0100            GO DO THE NEXT FORMAT
+MFMT0400 LA    1,3(,3)             LOAD ADDRESS OF DATA ADDRESS
+         SR    5,5                 SET REG 5 = 0
+         SR    6,6                 SET REG 6 = 0
+         ICM   5,B'0001',1(3)      LOAD THE INPUT LENGTH
+         JNZ   *+L'*+4             BR IF INPUT LENGTH IS DEFINED
+         IC    5,MFMTWLEN          LOAD SAVED LENGTH
+         IC    6,2(,3)             LOAD THE OUTPUT LENGTH
+         BRAS  15,MFMT1700         GET THE ADDRESS
+         LTR   15,6                TEST IF OUTPUT LENGTH IS SPECIFIED
+         JZ    MFMT0500            BR IF NOT
+         LR    0,4                 COPY START OF DATA TO REG 0
+         LR    1,5                 COPY INPUT LENGTH TO REG 1
+         ICM   1,B'1000',=C' '     LOAD FILL CHARACTER
+         MVCL  14,0                COPY DATA TO OUTPUT AREA
+         J     MFMT0100            GO DO THE NEXT FORMAT
+MFMT0500 LA    15,0(5,4)           PUT END OF INPUT AREA INTO REG 15
+MFMT0600 AHI   15,-1               BACKUP 1 BYTE
+         CR    15,4                TEST IF START OF DATA
+         JE    MFMT0700            BR IF SO
+         CLI   0(15),C' '          TEST IF TRAILING BLANK
+         JE    MFMT0600            BR IF SO
+MFMT0700 LA    1,1(,15)            SET REG 1 TO END OF INPUT
+         SR    1,4                 COMPUTE ACTUAL INPUT LENGTH
+         LR    0,4                 COPY START OF INPUT TO REG 0
+         LR    15,1                COPY LENGTH TO REG 15
+         MVCL  14,0                COPY TEXT TO OUTPUT LINE
+         J     MFMT0100            GO DO THE NEXT FORMAT
+MFMT0800 LA    1,3(,3)             LOAD ADDRESS OF DATA ADDRESS
+         SR    5,5                 SET REG 5 = 0
+         SR    6,6                 SET REG 6 = 0
+         IC    5,1(,3)             LOAD THE INPUT LENGTH
+         IC    6,2(,3)             LOAD THE OUTPUT LENGTH
+         BRAS  15,MFMT1700         GET THE ADDRESS
+         SLL   5,2                 MULTIPLY LENGTH BY 4
+         SR    15,15               SET REG 15 = 0
+         EX    0,MFMT2200(5)       LOAD THE BINARY VALUE
+         CVD   15,MFMTWWRK         CONVERT MFMT0800 VALUE TO PACKED   ->
+                                    DECIMAL
+         MVC   MFMTWEWK,MFMT2700   COPY EDIT MASK TO WORK AREA
+         LA    1,MFMTWEWK+L'MFMTWEWK-1
+         EDMK  MFMTWEWK,MFMTWWRK   CONVERT PACKED DECIMAL VALUE TO    ->
+                                    DECIMAL DIGITS
+         LTR   15,15               TEST VALUE
+         JNM   MFMT0900            BR IF VALUE IS +
+         AHI   1,-1                BACKUP START OF NUMBER BY 1
+         MVI   0(1),C'-'           INSERT A MINUS SIGN
+MFMT0900 LR    0,1                 COPY START OF VALUE TO REG 0
+         LA    1,MFMTWEWK+L'MFMTWEWK  LOAD END OF VALUE
+         SR    1,0                 COMPUTE LENGTH OF NUMBER
+         LTR   6,6                 TEST OUTPUT LENGTH
+         JZ    MFMT1100            BR IF 0
+         CR    6,1                 COMPARE OUTPUT LENGTH WITH MAX
+         JNL   MFMT1000            BR IF NUMBER WILL FIT IN FIELD
+         LR    15,6                COPY LENGTH TO REG 15
+         L     1,=AL1(C'*',0,0,0)  LOAD FILL CHARACTER
+         MVCL  14,0                INSERT *S IN THE OUTPUT FIELD
+         J     MFMT0100            GO DO THE NEXT FORMAT
+MFMT1000 LR    5,14                SAVE ADDRESS OF OUTPUT
+         L     7,=AL1(C' ',0,0,0)  LOAD FILL CHARACTER
+         LR    15,6                COPY FIELD LENGTH TO REG 15
+         MVCL  14,6                CLEAR THE OUTPUT FIELD
+         LR    14,5                COPY START OF OUTPUT FIELD TO REG 14
+         LR    15,6                COPY OUTPUT FIELD LENGTH TO REG 15
+         SR    15,1                COMPUTE NUMBER OF LEADING BLANKS
+         AR    14,15               COMPUTE START OF NUMBER IN OUTPUT
+MFMT1100 LR    15,1                COPY LENGTH TO REG 15
+         MVCL  14,0                COPY CONVERTED VALUE TO OUTPUT
+         J     MFMT0100            GO DO THE NEXT FORMAT
+* TRANSLATE INPUT BINARY DATA TO HEXADECIMAL DIGITS
+* JUST THE INPUT LENGTH IS USED, AN OUTPUT LENGTH IS IGNORED
+MFMT1200 LA    1,3(,3)             LOAD ADDRESS OF ADDRESS
+         SR    5,5                 SET REG 5 = 0
+         ICM   5,B'0001',1(3)      LOAD THE INPUT LENGTH
+         JNZ   *+L'*+4             BR IF INPUT LENGTH IS DEFINED
+         IC    5,MFMTWLEN          LOAD SAVED INPUT LENGTH
+         BRAS  15,MFMT1700         GET THE ADDRESS
+MFMT1300 CHI   5,7                 TEST REMINING LENGTH
+         JNH   MFMT1400            BR IF 7 OR FEWER BYTES REMAIN
+         UNPK  0(15,14),0(8,4)     TRANSLATE 7 BYTES TO HEX DIGITS
+         TR    0(14,14),MFMT2600
+         AHI   14,14               BUMP THE OUTPUT POINTER
+         AHI   4,7                 BUMP THE INPUT POINTER
+         AHI   5,-7                REDUCE REMAINING LENGTH BY 7
+         J     MFMT1300            GO DO THE NEXT GROUP
+MFMT1400 LR    1,5                 COPY REMAINING LENGTH TO REG 1
+         SLL   1,5                 GET OUTPUT LENGTH
+         OR    1,5                 ADD IN INPUT LENGTH
+         EX    1,MFMT1500          TRANSLATE LAST GROUP OF BYTES
+         SRL   1,4                  TO HEXADECIMAL DIGITS
+         EX    1,MFMT1600
+         AR    14,1                UPDATE THE OUTPUT POINTER
+         J     MFMT0100            GO CHECK THE NEXT FORMAT
+MFMT1500 UNPK  0(*-*,14),0(*-*,4)  ** EXECUTE ONLY **
+MFMT1600 TR    0(*-*,14),MFMT2600  ** EXECUTE ONLY **
+MFMT1700 TM    0(3),X'40'          TEST IF S-TYPE ADDRESS
+         JZ    MFMT2100            BR IF IN-LINE ADDRESS CONSTANT
+MFMT1800 LH    2,0(,1)             LOAD OFFSET FROM THE BASE REGISTER
+         N     2,=A(X'FFF')        ISOLATE THE OFFSET
+         IC    4,0(,1)             LOAD REGISTER
+         N     4,=A(X'F0')         ISOLATE THE REGISTER
+         SRL   4,2                 TRANSLATE REGISTER VALUE TO WORD   ->
+                                    OFFSET
+         L     4,MFMT2500(4)       LOAD THE SAVE AREA OFFSET FOR THE  ->
+                                    REGISTER
+         CHI   4,99                TEST IF REG 13
+         JNE   MFMT1900            BR IF NOT
+         LR    4,13                COPY REG 13 TO REG 4
+         J     MFMT2000            GO ADD THE OFFSET
+MFMT1900 L     4,0(4,13)           LOAD THE BASE REGISTER FROM THE    ->
+                                    SAVE AREA
+MFMT2000 ALR   4,2                 ADD THE OFFSET TO THE BASE REGISTER
+         LA    3,2(,1)             COMPUTE THE ADDRESS                ->
+                                    OF THE NEXT FORMAT
+         BR    15                  GO TO THE CONVERSION ROUTINE
+MFMT2100 ICM   4,B'1111',0(1)      LOAD THE DATA ADDRESS
+         LA    3,4(,1)             LOAD ADDRESS OF THE NEXT FORMAT
+         BR    15                  GO TO THE CONVERSION ROUTINE
+MFMT2200 DC    AL4(0)              LENGTH 0, FORCE AN S0C1
+         IC    15,0(,4)            LENGTH 1, LOAD 1 BYTE
+         ICM   15,B'0011',0(4)     LENGTH 2, LOAD 2 BYTES
+         ICM   15,B'0111',0(4)     LENGTH 3, LOAD 3 BYTES
+         ICM   15,B'1111',0(4)     LENGTH 4, LOAD 4 BYTES
+MFMT2300 MVC   0(5,14),=C'*FMT*'   INDICATE A FORMAT ERROR FOUND
+         AHI   14,5                UPDATE THE OUTPUT POINTER
+MFMT2400 LA    1,MFMTWLNE          LOAD ADDR OF GENERATED LINE
+         SR    14,1                COMPUTE LENGTH OF GENERATED LINE
+         STH   14,0(,1)            STORE LENGTH IN THE RDW
+         XC    2(2,1),2(1)         CLEAR THE REMAINDER OF THE RDW
+         ST    1,24(,13)           REPLACE CALLER'S REG 1 WITH        ->
+                                    ADDRESS OF GENERATED OUTPUT LINE
+         RETURN (14,12),T          RESTORE REGS & RETURN TO CALLER
+* THE MFMT2500 TABLE TRANSLATES A REGISTER NUMBER TO THE OFFSET
+* OF THE REGISTER LOCATION IN THE SAVE AREA USED WHEN MICROFMT IS
+* CALLED.  SINCE REGISTERS 14, 15, 0 AND 1 ARE LINK REGISTERS WHEN
+* MICROFMT IS CALLED THEY ARE NOT VERY USEFUL FOR THE PURPOSE, BUT
+* REGISTERS 2 THROUGH 13 ARE USEFUL.
+*             REG 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+MFMT2500 DC    A(20,24,28,32,36,40,44,48,52,56,60,64,68,99,12,16)
+MFMT2600 EQU   *-C'0'
+         DC    C'0123456789ABCDEF'
+*                  ----+----1----+
+MFMT2700 DC    0C' 999999999999999',C' ',13X'20',X'2120'
+         POP   USING
+         DC    0D'0'
+FMTWORK  DC    XL200'0',0D'0'
+         LTORG ,
+SAVEAREA DC    (3*9)D'0'           3 72 BYTE REGISTER SAVE AREAS
+ASATAB   DC    0XL256'0',(C' ')X'FF'
+         DC    FL1'1',(C'-'-(*-ASATAB))X'FF'
+         DC    FL1'3',(C'0'-(*-ASATAB))X'FF'
+         DC    FL1'2',(0256-(*-ASATAB))X'FF'
+* TRANSLATE TABLE TO CONVERT NON-PRINTABLES TO .
+DSTRTAB  DC    0CL256' ',(C' ')C'.',C' '
+         DC    (C'A'-(*-DSTRTAB))C'.'
+         DC    9AL1(*-DSTRTAB),(C'J'-(*-DSTRTAB))C'.'
+         DC    9AL1(*-DSTRTAB),(C'S'-(*-DSTRTAB))C'.'
+         DC    8AL1(*-DSTRTAB),(C'0'-(*-DSTRTAB))C'.'
+         DC    10AL1(*-DSTRTAB),(256-(*-DSTRTAB))C'.'
+* TABLE TO CONVERT HEX DIGITS TO PRINTABLE CHARACTERS
+DSHEXTAB EQU   *-C'0'
+         DC    C'0123456789ABCDEF'
+DSTAB    DC    AL2((DSWD1+0)-DSLINE,(DSTXT+00)-DSLINE)  ONE
+         DC    AL2((DSWD1+2)-DSLINE,(DSTXT+01)-DSLINE)   ENTRY
+         DC    AL2((DSWD1+4)-DSLINE,(DSTXT+02)-DSLINE)    FOR
+         DC    AL2((DSWD1+6)-DSLINE,(DSTXT+03)-DSLINE)     EACH
+         DC    AL2((DSWD2+0)-DSLINE,(DSTXT+04)-DSLINE)      BYTE
+         DC    AL2((DSWD2+2)-DSLINE,(DSTXT+05)-DSLINE)
+         DC    AL2((DSWD2+4)-DSLINE,(DSTXT+06)-DSLINE)
+         DC    AL2((DSWD2+6)-DSLINE,(DSTXT+07)-DSLINE)
+         DC    AL2((DSWD3+0)-DSLINE,(DSTXT+08)-DSLINE)
+         DC    AL2((DSWD3+2)-DSLINE,(DSTXT+09)-DSLINE)
+         DC    AL2((DSWD3+4)-DSLINE,(DSTXT+10)-DSLINE)
+         DC    AL2((DSWD3+6)-DSLINE,(DSTXT+11)-DSLINE)
+         DC    AL2((DSWD4+0)-DSLINE,(DSTXT+12)-DSLINE)
+         DC    AL2((DSWD4+2)-DSLINE,(DSTXT+13)-DSLINE)
+         DC    AL2((DSWD4+4)-DSLINE,(DSTXT+14)-DSLINE)
+         DC    AL2((DSWD4+6)-DSLINE,(DSTXT+15)-DSLINE)
+DSLINE   DC    AL2(DSLINEL,0),C' ' DUMPSTOR
+DSHEXO   DC    CL4' '               OUTPUT
+DSDECO   DC    CL6' ',C' '           LINE
+DSWD1    DC    CL8' ',C' '
+DSWD2    DC    CL8' ',CL2' '
+DSWD3    DC    CL8' ',C' '
+DSWD4    DC    CL8' ',C' *'
+DSTXT    DC    CL16' ',C'*'
+DSLINEL  EQU   *-DSLINE
+PAGEPOS  DC    0H'0',X'7FFF'
+PAGESIZE DC    H'60'
+PAGENUM  DC    0P'12345',PL(L'PAGENUM)'0'
+LEFT     EQU   1+(120-L'HDR)/2
+PAGEHDR  DC    AL2(PAGEHDRL,0),CL(LEFT)' '
+HDR      DC    C'C S I D U M P',CL(125-10-(*-PAGEHDR))' ',C'PAGE'
+PAGE#    DC    0C' 12345',CL(L'PAGE#)' '
+PAGEHDRL EQU   *-PAGEHDR   BETTER BE 0007D
+         DC    0F'0'
+OPARM    OPEN  (PRINT,OUTPUT),MF=L
+CPARM    CLOSE PRINT,MF=L
+         PRINT NOGEN
+PRINT    DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,RECFM=VBA,LRECL=125
+CSIPARM  CALL  ,(REASON,SELECT,CSIRET),VL,MF=L
+REASON   DC    F'0'
+CSI00RC  DC    F'0'
+SELECT   DC    CL44'SMYERS.**',CL44'MVSUSER.USERCAT',CL44' '
+         DC    CL16'ABCHX'
+         DC    CL4'Y'
+         DC    Y(NUMCODES)
+CODES    DC    CL8'NAME'
+         DC    CL8'VOLSER'
+NUMCODES EQU   (*-CODES)/8
+SELECTSZ EQU   *-SELECT
+C0       EQU   X'C0'
+FMT01    DC    AL1(L'FMT01A)
+FMT01A   DC    C' IGGCSI00 RC = '
+         DC    AL1(C0+1,L'CSI00RC,0),SL2(CSI00RC),AL1(L'FMT01B)
+FMT01B   DC    C', IGGCSI00 REASON CODE ='
+         DC    AL1(C0+2,L'REASON,0),SL2(REASON),X'FF'
+         DC    0D'0'
+         LTORG ,
+         DC    0D'0'
+CSIRET   DC    A(64*1024),2A(0)
+         DS    (64*1024-(*-CSIRET))X
+         END   CSIDUMP

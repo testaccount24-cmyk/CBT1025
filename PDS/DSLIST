@@ -1,0 +1,1046 @@
+DSL      TITLE '                   B A T C H   E Q U I V L E N T   T O >
+                 I S P F   D S L I S T'
+***********************************************************************
+*                                                                     *
+* Title -- DSLIST                                                     *
+*                                                                     *
+* Function / Operation -- DSLIST provides a display only equivalent   *
+*   of the ISPF DSLIST (usually option 3.4 in the ISPF primary menu). *
+*                                                                     *
+* JCL --                                                              *
+*   //        EXEC PGM=DSLIST,PARM='data set selection pattern'       *
+*   //SYSPRINT DD  -- Sequential report data set --                   *
+*                                                                     *
+*   The data set selection pattern uses the same wild card criteria   *
+*   as the Dsname level line in the ISPF Data Set List Utility panel. *
+*   There is no ability to specify a volume.                          *
+*                                                                     *
+*   The DD statement with DD name SYSPRINT is assigned                *
+*   DCB=(RECFM=VBA,LRECL=125).  The BLKSIZE is assigned by the        *
+*   system.  For tape and disk data sets this is generally "system    *
+*   determined BLKSIZE."                                              *
+*
+* Status / Change Level --
+*   V1L0 January 2022
+*                                                                     *
+* Attributes -- DSLIST is not reenterable, not refreshable and not    *
+*   reusable.  DSLIST operates in task mode, problem state and        *
+*   problem key.  DSLIST uses no APF restricted operating system      *
+*   services.                                                         *
+*                                                                     *
+* Y2K - DSLIST is Y2K compatible.  It uses 2 digit years in its       *
+*   printed output.  Except for printed output, DSLIST is Y2K         *
+*   compliant.                                                        *
+*                                                                     *
+***********************************************************************
+         SPACE 2
+         PUNCH ' ORDER DSLIST,DSLISTW,MINIFMT,CSIRET'
+         SPACE 2
+DSLIST   RSECT                     Establish DSLIST CSECT
+DSLIST   AMODE 31
+DSLIST   RMODE 24
+         PUSH  PRINT
+         PRINT NOGEN
+         COPY  IGGCSINA ,
+         POP   PRINT
+DSLIST   RSECT                     Return to DSLIST CSECT
+         USING DSLISTW,11          Establish work area addressability
+         USING *,12                Establish DSLIST addressability
+         SAVE  (14,12),,'DSLIST &SYSDATE &SYSTIME Copyright (C) 2021-20>
+               22 J. Stephen Myers'  Save regisaters
+         LR    12,15               Prepare DSLIST base register
+         BRAS  11,*+L'*+4          Br aroound DSLISTW address
+         DC    AL4(DSLISTW)
+         L     11,0(,11)           Load DSLISTW base register
+         LR    15,13               Save area address to reg 15
+         LA    13,SAVEAREA         Compute new save area address
+         ST    13,8(,15)           Add new save area to the
+         ST    15,4(,13)            save area chain
+         L     2,0(,1)             Load address of the PARM text
+         TIME  DEC                 Obtain the current date & time
+         STM   0,1,12(13)          Save date & time in a work area
+         ED    DTHHMM,12(13)       Convert time to hh:mm
+         ZAP   64(8,13),16(4,13)   Expamd PL4'cyyddd' TO PL8'cyyddd'
+         CVB   1,64(,13)           Convert PL8'cyyddd' TO F'cyyddd'
+         SR    0,0                 Separate cyy (to reg 1) and
+         D     0,=F'1000'           ddd (to reg 0)
+         LA    14,1900(,1)         Convert cyy to yyyy
+         LR    15,14               yyyy to reg 15
+         LR    1,0                 ddd to reg 1
+         LA    0,B'11'             Load leap year mask
+         CVD   14,64(,13)             Convert
+         UNPK  DTYYYY,64(8,13)         yyyy to
+         OI    DTYYYY+L'DTYYYY-1,X'F0'  decimal digits
+         NR    14,0                Is yyyy a leap year?
+         JNZ   DT0100              No
+         D     14,=F'100'          Divide yyyy by 100
+         LTR   14,14               Is yyyy a century year?
+         JNZ   DT0200              No, so yyyy is a leap year
+         NR    15,0                Is yyyy a century year leap year?
+         JZ    DT0200              Yes
+DT0100   LA    0,31+28             Load days in January and February
+         CR    1,0                 Is ddd in January OR February?
+         JNH   DT0200              Yes
+         LA    1,1(,1)             Add 1 to ddd
+DT0200   SR    14,14
+         IC    14,MTAB1(1)         Load month for day of year
+         LR    15,14               Copy month to reg 15
+         AR    14,14               Month * 2
+         AR    15,14               Month * 3
+         SH    1,MTAB2(14)         Compute day of month
+         LA    15,MTAB3(15)        Compute address of month name
+         MVC   DTMMM,0(15)         Month name to page header
+         CVD   1,64(,13)           Convert day of month
+         UNPK  DTDD,64(8,13)        to decimal digits
+         OI    DTDD+L'DTDD-1,X'F0'   in page header
+         LH    1,0(,2)             Load bytes in index
+         LA    0,2(,2)             Compute start of index text
+         LA    14,INDEX            Copy index
+         LA    15,L'INDEX           text to
+         ICM   1,B'1000',=C' '       INDEX
+         MVCL  14,0
+         OPEN  MF=(E,OPARM)        Open SYSPRINT
+         LTR   15,15               OK?
+         JZ    PROPEN              Yes
+         MVI   RC,16
+         J     EXIT
+PROPEN   DC    0H'0'
+         TM    INDEX,255-C' '      Any text in INDEX?
+         BNZ   GHLQ0100            Yes
+         LA    1,FMT02             Let user know he goofed
+         MVI   RC,12
+         J     EXITMSG
+GHLQ0100 LA    3,INDEX             Extract
+         LA    4,1                  high
+         LA    5,INDEX+8             level
+         LR    6,3                    qualifier
+GHLQ0200 CLI   0(3),C'.'               from index
+         JE    GHLQ0300
+         CLI   0(3),C' '
+         JE    GHLQ0300
+         JXLE  3,4,GHLQ0200
+         LA    1,FMT02             Let user know he goofed
+         MVI   RC,12
+         J     EXITMSG
+GHLQ0300 LR    7,3
+         SR    7,6
+         JP    GHLQ0400
+         LA    1,FMT01
+         MVI   RC,12
+         J     EXITMSG
+GHLQ0400 LA    14,HLQ
+         LA    15,L'HLQ
+         ICM   7,B'1000',=C' '
+         MVCL  14,6
+         TRT   HLQ,TESTDLM         Test if wild card characters in HLQ
+         JZ    GHLQ0500            OK
+         LA    1,FMT03
+         MVI   RC,8
+         J     EXITMSG
+GHLQ0500 MVC   CSIFILTK-CSIFIELD+CSISEL(L'HLQ),HLQ  Copy HLQ to CSI   ->
+                                                     parameters
+         LA    1,CSIHDR
+*        BRAS  14,OUTEDIT
+         LA    0,CSISELL
+         LA    1,CSISEL
+*        BRAS  14,DUMPSTOR
+* Retrieve the alias for the HLQ
+         L     3,=A(CSIRET)
+         LINK  SF=(E,LINKPARM),MF=(E,CSIPARM),PARAM=(,,(3)),VL=1
+         LTR   2,15                RC = 0?
+         BNZ   USEMCAT             Yes
+DUMP1    LA    1,CSIRMSG
+*        BRAS  14,OUTEDIT
+         L     1,CSIPARM+8         Load address of the return area
+         N     1,=A(X'7FFFFFFF')   Isolate the 31-bit address
+         L     0,8(,1)             Load used bytes in the return area
+*        BRAS  14,DUMPSTOR         Dump the return area
+         L     3,8(,1)             Load used bytes in return area
+         CHI   3,64                Test if anything
+         JH    GETCAT              Br if at least one entry
+USEMCAT  MVC   (CSICATNM-CSIFIELD)+CSISEL,16(1)  Copy master catalog  ->
+                                                  name for the next   ->
+                                                   run of IGGCSI00
+         J     GOTCAT
+GETCAT   L     3,CSIPARM+8         Load address of the return area
+         LH    4,12(,3)            Load number of field names returned
+         LA    3,14+50(,3)         Compute address of the first field
+         BCTR  4,0                 Reduce by 1
+GC0100   CLI   ATYPE-A(3),C'X'     Alias entry?
+         JE    GC0200
+         LH    1,ALEN-A(,3)        Load bytes in entry
+         la    3,ALEN-A(1,3)       Compute address of the next entry
+         JCT   4,GC0100
+         J     EXIT
+GC0200   MVC   (CSICATNM-CSIFIELD)+CSISEL,52(3)  Copy catalog name    ->
+                                                  for the next        ->
+                                                   IGGCSI00 run
+GOTCAT   MVC   (CSIFILTK-CSIFIELD)+CSISEL,INDEX  Copy the index
+         MVC   (CSIOPTS-CSIFIELD)+CSISEL,=C'Y   '  Reset options
+         MVC   (CSIDTYPD-CSIFIELD)+CSISEL,=CL(L'CSIDTYPD)'ABCHX'
+         MVC   (CSIFLDNM-CSIFIELD)+CSISEL,=CL8'NAME'
+         MVC   ((CSIFLDNM+L'CSIFLDNM)-CSIFIELD)+CSISEL,=CL8'VOLSER'
+         LA    0,2                 Note, 2 field names provided
+         STH   0,(CSINUMEN-CSIFIELD)+CSISEL
+* See if the last qualifier has any wild cards
+         LA    15,(CSIFILTK-CSIFIELD)+L'CSIFILTK+CSISEL Find the end  ->
+                                                         of the index
+FINDLLQ1 BCTR  15,0
+         CLI   0(15),C' '
+         BE    FINDLLQ1
+* Find the start of the low level qualifier
+         LR    14,15
+FINDLLQ2 BCTR  14,0
+         CLI   0(14),C'.'
+         BNE   FINDLLQ2
+         LA    0,(CSIFILTK-CSIFIELD)+CSISEL Low level qualifier in the
+         CR    14,0                          filter?
+         JL    FINDLLQ3            No
+         LA    14,1(,14)
+         SR    15,14
+         EX    15,FINDLLQ5         Wild card in LLQ?
+         BNZ   FINDLLQ4            Yes
+         AR    15,14
+FINDLLQ3 MVC   1(3,15),=C'.**'     Add .** to the filter
+FINDLLQ4 LA    1,CSIHDR            Write the dump header
+*        BRAS  14,OUTEDIT
+         LA    0,CSISELL           Dump the CSI
+         LA    1,CSISEL
+*        BRAS  14,DUMPSTOR
+         LINK  SF=(E,LINKPARM),MF=(E,CSIPARM)  Call IGGCSI00
+         LR    2,15                IGGCSI00 RC to reg 2
+         LA    1,CSIRMSG           Write the dump header
+*        BAL   14,OUTEDIT
+         L     1,CSIPARM+8         Load address of the IGGCSI00       ->
+                                    return area
+         N     1,=A(X'7FFFFFFF')   Remove the VL bit
+         L     0,8(,1)             Load bytes returned in the         ->
+                                    return area
+*        BRAS  14,DUMPSTOR         Dump the return area
+         CHI   0,64
+         BH    SCANRET
+         LA    1,FMT05
+         J     EXITMSG
+SCANRET  L     2,CSIPARM+8         Load address of the return area
+         N     2,=A(X'7FFFFFFF')   Isolate the 31-bit address
+         LR    3,2                 Copy the address to reg 3
+         A     3,8(,2)             Compute end of data in return area
+         LA    2,64(,2)            Compute address of first entry
+         USING A,2                 Establish addressability
+NEXTA    LR    0,2                 Compute offset in the return area
+*        SL    0,CSIPARM+8
+*        STH   0,OFFSET            Store the offset
+*        LA    1,FMT04             Format part of the entry
+*        BRAS  14,FMTLINE
+         MVC   DVOLSER(7),=CL8' '  Init
+         MVC   DRECFM,=CL8' '       the
+         MVC   DLRECL,=CL8' '        output
+         MVC   DBLKSIZE,=CL8' '       line
+         MVC   DDSORG,=CL8' '
+         MVC   DCRTD,=CL8' '
+         MVC   DEXPIRE,=CL8' '
+         MVC   DREFD,=CL8' '
+         MVC   DALLOC,=CL8' '
+         MVC   DUSED,=CL8' '
+         MVC   DDSNAME,ADSN
+         STM   2,3,12(13)          Save regs 2 & 3
+         TRT   ATYPE,TESTV         Test if entry contains a volume
+         LM    2,3,12(13)          Restore regs 2 & 3
+         BNZ   SKIPFVOL
+         LA    14,AADSN            Compute address of the first       ->
+                                    optional field
+         LH    15,ALEN1            Load length of the first           ->
+                                    optional field (AADSN)
+         AR    14,15               Compute address of  the second     ->
+                                    optional field (AVOLS)
+         MVC   DVOLSER,0(14)       Initialize DVOLSER
+         CLI   DVOLSER,C'*'        Test if SYSRES
+         JNE   NOTRES              No
+         L     14,CVTPTR           Load address of the CVT
+         L     14,CVTSYSAD-CVTMAP(,14) Load address of the SYSRES UCB
+         MVC   DVOLSER,UCBVOLI-UCBOB(14)  Copy the volume serial
+NOTRES   SR    0,0
+         ICM   0,B'0011',ALEN2     Load bytes in volser list
+         JZ    NOTMULTI
+         CHI   0,L'AVOLS           Compare w/bytes in 1 volume serial
+         JNH   *+L'*+4             Br if 1 volume serial
+         MVI   DVOLSER+L'DVOLSER,C'+'  Note more than one volume serial
+NOTMULTI LA    1,DVOLSER           Find the volume
+         BRAS  14,FINDVOL
+         LTR   15,15               OK?
+         JNZ   NA9000              No
+SKIPFVOL CLI   ATYPE,C'C'          VSAM CLUSTER?
+         JNE   NA0100              No
+         LA    1,FMT07
+         BRAS  14,FMTLINE
+         J     NA9999
+NA0100   CLI   ATYPE,C'B'          GDG INDEX?
+         JNE   NA0200              No
+         LA    1,FMT08
+         BRAS  14,FMTLINE
+         J     NA9999
+NA0200   CLI   ATYPE,C'X'          Alias?
+         JNE   NA0300              No
+         LA    1,FMT06
+         BRAS  14,FMTLINE
+         J     NA9999
+NA0300   CLI   ATYPE,C'A'          Regular Non-VSAM?
+         JE    NA0800              Yes
+         CLI   ATYPE,C'D'          VSAM data component?
+         JE    NA0800              Yes
+         CLI   ATYPE,C'I'          VSAM index component?
+         JE    NA0800              Yes
+         CLI   ATYPE,C'H'          GDG generation?
+         JE    NA0800              Yes
+NA0800   LA    0,DVOLSER
+         LA    1,ADSN
+         BRAS  14,GETDSCB
+NA9000   LA    14,DDSNAME+L'DDSNAME
+NA9100   BCTR  14,0
+         CLI   0(14),C' '
+         JE    NA9100
+         LA    14,1(,14)
+         LA    1,DETAIL
+         SR    14,1
+         STH   14,0(,1)
+         BRAS  14,OUTEDIT
+NA9999   LH    1,ALEN              LOAD BYTES IN VARIABLE DATA
+         LA    2,ALEN(1)           Compute address of the next entry
+         CR    2,3                 Next entry in return area?
+         BL    NEXTA               Yes
+         J     EXIT
+         DROP  2
+EXITMSG  BRAS  14,FMTLINE
+EXIT     LA    2,CPARM             Close the data sets
+         CLOSE MF=(E,(2))
+         L     3,=A(X'FFFFFF')
+X0100    L     1,0(,2)             Free the buffer pools
+         NR    1,3                 Isolate the 24-bit DCB address
+         TM    DCBBUFCB-IHADCB+3(1),1  DCB have a buffer pool?
+         BO    X0200                   No
+         FREEPOOL (1)              Free the buffer pool
+X0200    TM    0(2),X'80'          End of CLOSE parameter list?
+         LA    2,4(,2)             Compute address of next DCB address
+         JZ    X0100               Br if not end of the CLOSE parm list
+         L     13,4(,13)           Load address of the higher save area
+         SR    15,15               Load the return code
+         IC    15,RC
+         RETURN (14,12),RC=(15)    Restore registers & return
+FINDLLQ5 TRT   0(*-*,14),TESTDLM
+         EJECT
+* Fill in DSCB data in the detail line
+*        LA    0,VOLUME
+*        LA    1,DSNAME
+*        BRAS   14,GETDSCB
+         CNOP  2,8
+GETDSCB  BASR  15,0
+         SAVE  (14,12),,GETDSCB    Save registers
+         LR    15,13               Save area address to reg 15
+         LA    13,72(,13)          Compute new save area address
+         ST    15,4(,13)           Add new save area to the
+         ST    13,8(,15)            save area chain
+         LR    2,0                 Volume address to reg 2
+*        MVC   DVOLSER,0(2)        Volume to detail line
+         MVC   DDSNAME,0(1)        Data set name to detail line
+         ST    1,CAMLST1+4         Prepare
+         ST    0,CAMLST1+8          search [by name]
+         LA    0,F1DSCB              CAMLST
+         ST    0,CAMLST1+12
+         SR    0,0
+         OBTAIN CAMLST1            Obtain the format 1 DSCB
+         LTR   15,15               OK?
+         JNZ   GETD9999            No, exit
+         LA    1,DRECFM            Convert RECFM
+         LA    0,RECFMTBN           bits to RECFM
+         LA    15,RECFMTB            character keywords
+GETD0100 MVC   12(1,13),(DS1RECFM-DS1FMTID)+F1DSCB
+         NC    12(1,13),0(15)
+         CLC   12(1,13),1(15)
+         JNE   GETD0300
+         MVC   0(1,1),2(15)
+         LA    1,1(,1)
+GETD0300 LA    15,3(,15)
+         JCT   0,GETD0100
+         SR    0,0
+         ICM   0,B'0011',(DS1LRECL-DS1FMTID)+F1DSCB
+         CVD   0,64(,13)
+         MVC   64-6(6,13),=X'402020202120'
+         ED    64-6(6,13),72-3(13)
+         MVC   DLRECL,64-L'DLRECL(13)
+         ICM   0,B'0011',(DS1BLKL-DS1FMTID)+F1DSCB
+         CVD   0,64(,13)
+         MVC   64-6(6,13),=X'402020202120'
+         ED    64-6(6,13),72-3(13)
+         MVC   DBLKSIZE,64-L'DBLKSIZE(13)
+         LA    0,DCRTD
+         ICM   1,B'0111',(DS1CREDT-DS1FMTID)+F1DSCB
+         BRAS  14,CNVTDATE
+         LA    0,DEXPIRE
+         ICM   1,B'0111',(DS1EXPDT-DS1FMTID)+F1DSCB
+         BRAS  14,CNVTDATE
+         LA    0,DREFD
+         ICM   1,B'0111',(DS1REFD-DS1FMTID)+F1DSCB
+         BRAS  14,CNVTDATE
+         LA    0,DSORGTBN
+         LA    1,DSORGTB
+GETD0400 CLC   (DS1DSORG-DS1FMTID)+F1DSCB,0(1)
+         JE    GETD0500
+         LA    1,5(,1)
+         JCT   0,GETD0400
+GETD0500 MVC   DDSORG,2(1)
+         BRAS  14,GETSPACE
+GETD9999 L     13,4(,13)
+         RETURN (14,12)
+         EJECT
+         CNOP  2,8
+FMTLINE  BASR  15,0
+         SAVE  (14,0),,FMTLINE     Save registers
+         LR    15,13               Save area address to reg 15
+         LA    13,72(,13)          Compute new save area address
+         ST    13,8(,15)           Add new save area to the
+         ST    15,4(,13)            save area chain
+         LA    0,FMTWORK           Use MINIFMT to create the output
+         L     15,=V(MINIFMT)       line
+         CALL  (15)
+         L     13,4(,13)           Load address of the higher save area
+         LM    14,0,12(13)         Restore regs 14 through 0
+         J     OUTEDIT             Print the generated line
+         SPACE 2
+         CNOP  2,8
+OUTEDIT  BASR  15,0
+         SAVE  (14,5),,OUTEDIT     Save registers
+         LR    15,13               Save area address to reg 15
+         LA    13,72(,13)          Compute new save area address
+         ST    13,8(,15)           Add new save area to the
+         ST    15,4(,13)            save area chain
+         LR    2,1                 Line address to reg 2
+         SR    3,3                 Init regs 3 & 4
+         SR    4,4
+         IC    3,4(,1)             Load carriage control
+         IC    4,ASATAB(3)         Load lines the line prints
+         AH    4,PAGEPOS           Compute location on page where     ->
+                                    line will print
+         CH    4,PAGESIZE          Will line print on current page?
+         JNH   OE0200              Yes
+         AP    PAGENUM,=P'1'       Update page number
+         MVC   PAGE#,=X'402020202120'  Convert page number to
+         ED    PAGE#,PAGENUM            decimal digits
+         PUT   PRINT,PAGEHDR       Print the page header
+         LA    4,3                 Load new page position
+         MVI   4(2),C'0'           Alter carriage control character
+         LA    5,SUBHDRL           Compute addresss of list of        ->
+                                    sub header lines
+OE0100   L     1,0(,5)             Load address of a sub header
+         SR    15,15               Load the carriage control
+         IC    15,4(,1)             character
+         IC    15,ASATAB(15)       Load lines the line will print
+         AR    4,15                Update the page position
+         LR    0,1                 Print the sub header line
+         PUT   PRINT,(0)
+         TM    0(5),X'80'          End of list?
+         BO    OE0200              Yes
+         LA    5,4(,5)             Update list pointer
+         B     OE0100
+OE0200   PUT   PRINT,(2)           Print the line
+         STC   3,4(,2)             Restore original carriage control
+         STH   4,PAGEPOS           Uodate the page position
+         L     13,4(,13)           Load address of the higher save area
+         RETURN (14,5)             Restore registers & return
+         EJECT
+* Convert 3 byte date in VTOC format to C'ddmmmyy'
+*        ICM   1,B'0111',DS1CRDTE
+*        LA    0,7-byte-output-area
+*        BRAS  14,CNVTDATE
+         CNOP  2,8
+CNVTDATE BASR  15,0
+         SAVE  (14,2),,CNVTDATE    Save registers
+         LR    2,0                 Copy output address to reg 2
+         MVC   0(7,2),=CL7'-----'  Init the output area
+         N     1,=A(X'FFFFFF')     Isolate the date
+         JZ    CNVD0300            Exit if 0s
+         SR    0,0                 Isolate yy (to reg 1) &
+         D     0,=A(X'10000')       ddd (to reg 0)
+         LA    14,1900(,1)         Convert yy to yyyy
+         LR    1,0                 ddd to reg 1
+         LA    0,B'11'             Load leap year mask
+         LR    15,14               yyyy to reg 15
+         CVD   14,64(,13)          Convert yyyy to
+         UNPK  5(2,2),64(8,13)      C'yy'
+         OI    6(2),X'F0'
+         NR    14,0                Is yyyy a possible leap year?
+         BNZ   CNVD0100            No
+         D     14,=F'100'          Divide yyyy by 100
+         LTR   14,14               Test remainder
+         JNZ   CNVD0200            yyyy is a leap year
+         NR    15,0                Is yyyy a century year leap year?
+         JZ    CNVD0200            Yes
+CNVD0100 LA    0,31+28             Compute days in January & February
+         CR    1,0                 Is ddd in January or February?
+         JNH   CNVD0200            Yes
+         LA    1,1(,1)             Adjust ddd for March through Dec
+CNVD0200 SR    14,14
+         IC    14,MTAB1(1)         Load month of year for day of year
+         LR    15,14               Month to reg 15
+         AR    14,14               2 * month
+         AR    15,14               3 * month
+         SH    1,MTAB2(14)         Compute day of month
+         CVD   1,64(,13)           Convert day of month
+         UNPK  0(2,2),64(8,13)      to C'dd'
+         OI    1(2),X'F0'
+         LA    15,MTAB3(15)        Compute address of the month
+         MVC   2(3,2),0(15)        Copy month to output
+CNVD0300 RETURN (14,2)             Restore registers & return
+         EJECT
+* Locate a volume; return a copy of the UCB in SCANUCB
+*        LA    1,volume
+*        BAS   14,FINDVOL
+* R15 = 0 - UCB copy in SCANUCB
+* R15 ¬= 0 - Volume is not online
+         CNOP  2,8
+FINDVOL  BASR  15,0
+         SAVE  (14,2),,FINDVOL     Save registers
+         LR    15,13               Prepare
+         LA    13,72(,13)           new
+         ST    15,4(,13)             save
+         ST    13,8(,15)              area
+         LR    2,1                 Copy volume serial address to reg 2
+         XC    SCANWORK,SCANWORK   Clear the UCBSCAN work area
+* Try to find the volume
+         UCBSCAN COPY,WORKAREA=SCANWORK,UCBAREA=SCANUCB,VOLSER=(2),   ->
+               DYNAMIC=YES,RANGE=ALL,LINKAGE=SYSTEM,                  ->
+               MF=(E,SCANPARM,COMPLETE)
+         L     13,4(,13)           Load address of the higher save area
+         RETURN (14,2),RC=(15)     Restore registers & return
+         EJECT
+*        LA    0,BYTESTODUMP
+*        LA    1,BYTES
+*        BAS   14,DUMPSTOR
+         CNOP  2,8
+DUMPSTOR BASR  15,0                Store current address in reg 15
+         SAVE  (14,12),,DUMPSTOR   Save registers
+         LR    15,13               Save area address to reg 15
+         LA    13,72(,13)          Compute new save area address
+         ST    15,4(,13)           Add new save area to the
+         ST    13,8(,15)            save area chain
+         LR    2,0                 Bytes to dump to reg 2
+         LR    3,1                 Storage address to reg 3
+         LA    4,0(2,3)            Compute end of data
+         SR    15,15               Special CHARACTERS
+         IC    15,FIXTAB            characters
+         LA    15,TRTAB(15)          already inserted into
+         CLC   0(1,15),FIXTAB         TRTAB?
+         BE    DS0200              Yes
+         LA    0,L'FIXTAB          Insert
+         LA    1,FIXTAB             special
+         SR    15,15                 characters
+DS0100   IC    15,0(,1)               into
+         STC   15,TRTAB(15)            TRTAB
+         LA    1,1(,1)
+         BCT   0,DS0100
+DS0200   LR    5,3                 Start of storage to reg 5
+DS0300   LR    0,5                 Compute offset of line in data area
+         SR    0,3
+         STH   0,12(,13)           Convert offset
+         UNPK  DLHEX(5),12(3,13)    to
+         TR    DLHEX,HEXTAB          hex digits
+         MVC   DLDEC,=X'402020202120'  Convert offset to decimal
+         CVD   0,64(,13)                digits
+         ED    DLDEC,72-3(13)
+         LA    0,16(,5)            Compute end of data in 16 byte line
+         CR    0,4                 End of full line > end of data?
+         BH    DS0400              Yes
+         MVC   DLTXT,0(5)          Copy data to DLTXT
+         UNPK  DLWD1(9),0(5,5)     Convert
+         TR    DLWD1,HEXTAB         16
+         MVI   DLWD1+L'DLWD1,C' '    bytes
+         UNPK  DLWD2(9),4(5,5)        to
+         TR    DLWD2,HEXTAB            hex
+         MVI   DLWD2+L'DLWD2,C' '       digits
+         UNPK  DLWD3(9),8(5,5)           in
+         TR    DLWD3,HEXTAB               DUMPLINE
+         MVI   DLWD3+L'DLWD3,C' '
+         MVC   12(4,13),12(5)      Copy last word in range to work area
+         UNPK  DLWD4(9),12(5,13)
+         TR    DLWD4,HEXTAB
+         MVI   DLWD4+L'DLWD4,C' '
+         LA    5,16(,5)            Update data area address
+         B     DS0600              Write the line
+* Convert last line 1 byte a5 a time
+DS0400   MVC   DLWD1,=CL8' '       Clear
+         MVC   DLWD2,=CL8' '        DUMPLINE
+         MVC   DLWD3,=CL8' '
+         MVC   DLWD4,=CL8' '
+         MVC   DLTXT(8),=CL8' '
+         MVC   DLTXT+8(8),=CL8' '
+         LA    0,DLTABN            Load entries in DLTAB
+         LA    1,DLTAB             Compute address of DLTAB
+DS0500   LH    14,2(,1)            Load offset of DLTXT data
+         LA    14,DUMPLINE(14)     Compute address of DLTXT data
+         MVC   0(1,14),0(5)        Copy data to DLTXT
+         LH    15,0(,1)            Load offset of hex digit in DUMPLINE
+         LA    15,DUMPLINE(15)     Compute address of hex digits
+         UNPK  0(3,15),0(2,14)     Cpnvert 1 text byte
+         TR    0(2,15),HEXTAB       to 2 hex digits
+         MVI   2(15),C' '
+         LA    5,1(,5)             Compute address of next data byte
+         LA    1,4(,1)             Compute address of next DLTAB entry
+         CR    5,4                 Next data byte in range?
+         BNL   DS0600              No
+         BCT   0,DS0500
+DS0600   TR    DLTXT,TRTAB         Translate non-printables to .
+         LA    1,DUMPLINE          Write the completed DUMPLINE
+         BRAS  14,OUTEDIT
+         CR    5,4                 Done?
+         BL    DS0300              No
+         L     13,4(,13)           Load address of the higher save area
+         RETURN (14,12)            Restore registers & return
+         SPACE 5
+         DC    0D'0'
+ASATAB   DC    0XL256'0',(C' ')X'FF'
+         DC    FL1'1',(C'+'-(*-ASATAB))X'FF'
+         DC    FL1'0',(C'0'-(*-ASATAB))X'FF'
+         DC    FL1'2',(L'ASATAB-(*-ASATAB))X'FF'
+TESTDLM  DC    0XL256'0',256FL1'0'
+         ORG   TESTDLM+C'*'
+         DC    FL1'4'
+         ORG   TESTDLM+C'%'
+         DC    FL1'4'
+         ORG   ,
+TESTV    DC    0XL256'0',(C'A')FL1'4'
+         DC    FL1'0',(C'D'-(*-TESTV))FL1'4' NON-VSAM
+         DC    FL1'0',(C'H'-(*-TESTV))FL1'4' VSAM DATA COMPONENT
+         DC    2FL1'0',(0256-(*-TESTV))FL1'4' GDG NON-VSAM & VSAM INDEX
+MTAB2    EQU   *-2
+         DC    Y(0)                                 JAN
+         DC    Y(31)                                FEB
+         DC    Y(31+29)                             MAR
+         DC    Y(31+29+31)                          APR
+         DC    Y(31+29+31+30)                       MAY
+         DC    Y(31+29+31+30+31)                    JUN
+         DC    Y(31+29+31+30+31+30)                 JUL
+         DC    Y(31+29+31+30+31+30+31)              AUG
+         DC    Y(31+29+31+30+31+30+31+31)           SEP
+         DC    Y(31+29+31+30+31+30+31+31+30)        OCT
+         DC    Y(31+29+31+30+31+30+31+31+30+31)     NOV
+         DC    Y(31+29+31+30+31+30+31+31+30+31+30)  DEC
+MTAB3    EQU   *-3
+         DC    C'JANFEBMARAPRMAYJUNJULAUGSEPOCTNOVDEC'
+MTAB1    EQU   *-1
+         DC    31AL1(1),29AL1(2),31AL1(3),30AL1(4),31AL1(5),30AL1(6)
+         DC    31AL1(7),31AL1(8),30AL1(9),31AL1(10),30AL1(11),31AL1(12)
+         DC    0D'0'
+         LTORG ,
+C0       EQU   X'C0'
+FMT01    DC    AL1(L'FMT01A)
+FMT01A   DC    C' UNABLE TO DTERMINE HIGH LEVEL QUALIFIER IN '
+         DC    AL1(C0+0,L'INDEX,0),SL2(INDEX),X'FF'
+FMT02    DC    AL1(L'FMT02A)
+FMT02A   DC    C' EXEC STATEMENT PARM DOES NOT SPECIFY A DATA SET PATTE>
+               ERN',X'FF'
+FMT03    DC    AL1(L'FMT03A)
+FMT03A  DC    C' WILD CARD CHARACTERS NOT PERMITTED IN THE HIGH LEVEL Q>
+               UALIFIER',X'FF'
+*         USING A,2
+*FMT04    DC    AL1(1),C' '
+*         DC    AL1(C0+2,L'OFFSET,4),SL2(OFFSET),AL1(1),C' '
+*         DC    AL1(C0+0,L'ATYPE,L'ATYPE),SL2(ATYPE),AL1(1),C' '
+*         DC    AL1(C0+2,L'ALEN,4),SL2(ALEN),AL1(1),C' '
+*         DC    AL1(C0+0,L'ADSN,0),SL2(ADSN),X'FF'
+*         DROP  2
+FMT05    DC    AL1(L'FMT05A)
+FMT05A   DC    C' NO DATA SETS MATCH '
+         DC    AL1(C0+0,L'INDEX,0),SL2(INDEX),X'FF'
+         USING X,2
+FMT06    DC    AL1(1),C' '
+         DC    AL1(C0+0,L'XDSN,0),SL2(XDSN)
+         DC    AL1(L'FMT06B)
+FMT06B   DC    C' IS AN ALIAS NAME FOR '
+         DC    AL1(C0+0,L'XRELATED,0),SL2(XRELATED),X'FF'
+         DROP  2
+         USING C,2
+FMT07    DC    AL1(1),C' '
+         DC    AL1(C0+0,L'CDSN,0),SL2(CDSN)
+         DC    AL1(L'FMT07B)
+FMT07B   DC    C' VSAM CLUSTER',X'FF'
+         DROP  2
+         USING B,2
+FMT08    DC    AL1(1),C' '
+         DC    AL1(C0+0,L'BINDEX,0),SL2(BINDEX)
+         DC    AL1(L'FMT08B)
+FMT08B   DC    C' GDG INDEX',X'FF'
+         DROP  2
+         EJECT
+* GETSPACE uses addressability independent of the mainline of DSLIST.
+* Reg 11 addressability for DSLISTW continues.
+         CNOP  2,8
+GETSPACE BASR  15,0
+         USING *,12                Establish GETSPACE addressability
+         SAVE  (14,12),,GETSPACE   Save registers
+         LR    12,15               Prepare GETSPACE base register
+         LR    15,13               Prepare
+         LA    13,72(,13)           new
+         ST    13,8(,15)             save
+         ST    15,4(,13)              area
+* Obtain tracks / cylinder from the DVCT
+         L     15,CVTPTR           Load address of the CVT
+         L     15,CVTZDTAB-CVTMAP(,15)  Load address of the device    ->
+                                         characteristics table
+         SR    1,1                 Prepare reg 1
+         IC    1,(UCBTBYT4-UCBOB)+SCANUCB  Load the device type code
+         LA    0,DVCTYPMK          Load DVCTYPMK mask
+         NR    1,0                 Isolate the device type code
+         IC    1,DVCTIOFF-DVCTI(1,15)  Load the offset of the         ->
+                                        characteristics for the device
+         LH    0,DVCTRK-DVCT(1,15) Load tracks/cylinder for the device
+         STH   0,CYLSIZE           Save tracks/cylinder
+* Analyze extent data in the Format 1 DSCB
+* Register
+*     2    Data set extents
+*     3    Allocated tracks
+*     4    Extents in group
+         SR    3,3                 Allocated space
+         SR    2,2                 Load number of extents
+         ICM   2,B'0001',(DS1NOEPV-DS1FMTID)+F1DSCB
+         JZ    GS1100              Br if no extents
+         LA    4,3                 Load number of extent entries in   ->
+                                    the format 1 DSCB
+         LA    5,(DS1EXT1-DS1FMTID)+F1DSCB  Compute address of the    ->
+                                             first extent in the      ->
+                                              format 1 DSCB
+GS0100   BRAS  14,XSIZE            Get tracks defined in the extent
+         AR    3,1                 Update allocated tracks
+         LA    5,10(,5)            Compute address of the next extent
+         JCT   2,GS0200            Br if more extents to process
+         J     GS1100              All extents processed
+GS0200   JCT   4,GS0100            Br if more extents in group
+* All extents in the Format 1 DSCB processed, read the first
+* Format 3 DSCB
+         MVC   CAMLST2+8(4),CAMLST1+8  Copy volser address to CAMLST2
+GS0300   LA    0,(DS1PTRDS-DS1FMTID)+F1DSCB  Compute address of the   ->
+                                              DSCB
+GS0400   ST    0,CAMLST2+4         Store DSCB addressin CAMLST2
+         OBTAIN CAMLST2            Read 1st extended DSCB
+         LTR   15,15               OK?
+         JZ    *+L'*+2             Yes
+         DC    H'0'                Oops
+         CLI   (DS3FMTID-DSCB)+F3DSCB,C'3'  Format3?
+         JE    GS0600                       Yes
+         CLI   (DS3FMTID-DSCB)+F3DSCB,C'2'  Format 2?
+         JE    GS0500                       Yes
+         DC    H'0'                Oops
+GS0500   LA    0,(DS3PTRDS-DSCB)+F3DSCB  Compute addrsss of the next  ->
+                                          DSCB
+         J     GS0400                    Go read it
+* Process extent entries in the key of the Format 3 DSCB
+GS0600   LA    4,L'DS3EXTNT/10     Load extents in the key
+         LA    5,(DS3EXTNT-DSCB)+F3DSCB  Compute address of first     ->
+                                          extent in the key
+GS0700   BRAS  14,XSIZE            Compute tracks in the extent
+         AR    3,1                 Update total allocation
+         LA    5,10(,5)            Compute address of next extent
+         JCT   2,GS0800            Continue if more extents in data set
+         J     GS1100
+GS0800   JCT   4,GS0700            Continue if more extents in DS3EXTNT
+* Process extent entries in the data area of the Format 3 DSCB
+         LA    4,L'DS3ADEXT/10     Load number of extent entries in   ->
+                                    data area
+         LA    5,(DS3ADEXT-DSCB)+F3DSCB Compute address of first      ->
+                                         extent in the data area
+GS0900   BRAS  14,XSIZE            Compute tracks in the extent
+         AR    3,1                 Update total allocation
+         LA    5,10(,5)            Compute address of next extent area
+         JCT   2,GS1000            Continue if more extents in data set
+         J     GS1100              All extents processed
+GS1000   JCT   4,GS0900            Continue if more extents in DS3ADEXT
+* All extents in the Format 3 DSCB processed, read the next Format 3
+* DSCB for data sets with more than 16 extents
+         LA    0,(DS3PTRDS-DSCB)+F3DSCB  Load address of the next DSCB
+         J     GS0400
+* All extents processed, reg 3 has the allocated tracks
+GS1100   LR    1,3                 Allocated tracks to reg 1
+         LA    0,DALLOC            Compute address of output area
+         BRAS  14,CNVTDEC
+         MVC   DUSED,DALLOC        Init DUSED = DALLOC
+         SR    1,1                 Load TT portion of DS1LSTAR
+         ICM   1,B'0011',(DS1LSTAR-DS1FMTID)+F1DSCB
+* Is DS1LSTAR likely to be valid?
+         TM    (DS1DSORG-DS1FMTID)+F1DSCB,DCBDSGPS+DCBDSGPO+DCBDSGDA
+         JZ    GS9999              No
+         MVC   12(2,13),(DS1DSORG-DS1FMTID)+F1DSCB  Copy DSORG to     ->
+                                                     work area
+         NI    12(13),255-DCBDSGU  Reset unmovable
+         CLC   12(2,13),TESTPO            Partitioned?
+         JNE   GS1200                     No
+         TM    (DS1SMSFG-DS1FMTID)+F1DSCB,DS1PDSE  PDSE?
+         JZ    GS1200                              No
+         MVI   DDSORG+2,C'E'       Note PDSE
+         J     GS9999
+GS1200   TM    (DS1FLAG1-DS1FMTID)+F1DSCB,DS1LARGE Data set > 64K
+         JZ    GS1300                              No
+         ICM   1,B'0100',(DS1TTTHI-DS1FMTID)+F1DSCB  Load high order  ->
+                                                      byte of TTT
+GS1300   TM    ((DS1LSTAR-DS1FMTID)+2)+F1DSCB,X'FF'  R = 0?
+         JZ    GS1400                                Yes
+         LA    1,1(,1)             Add 1 to TT
+GS1400   LA    0,DUSED
+         BRAS  14,CNVTDEC          Convert used tracks to decimal
+GS9999   L     13,4(,13)           Load address of the higher save area
+         RETURN (14,12)            Restore registers & return
+         SPACE 5
+         CNOP  2,8
+XSIZE    BASR  15,0
+         SAVE  (14,0),,XSIZE       SAVE REGISTERS
+         LH    15,2(,5)            LOAD CYLINDER ADDRESS OF START OF  ->
+                                    EXTENT
+         MH    15,CYLSIZE          MULTIPLY BY TRACKS / CYLINDER
+         AH    15,4(,5)            ADD TRACK IN CYLINDER
+         LH    14,6(,5)            LOAD CYLINDER ADDRESS OF END OF    ->
+                                    EXTENT
+         MH    14,CYLSIZE          MULTIPLY BY TRACKS / CYLINDER
+         AH    14,8(,5)            ADD TRACK IN CYLINDER
+         SR    14,15               COMPUTE TRACKS - 1 IN EXTENT
+         LA    0,1(14)             COMPUTE TRACKS IN EXTENT
+         ST    0,24(,13)           REPLACE CALLER'S REG 1 WITH        ->
+                                    EXTENT SIZE
+         RETURN (14,1)             RESTORE REGISTERS & RETURN
+         EJECT
+*        LA    0,6-BYTE-OUTPUT-AREA
+*        L     0,VALUE
+*        BAS   14,CNVTDEC
+         CNOP  2,8
+CNVTDEC  BASR  15,0
+         USING *,12                Establish CNVTDEC addressability
+         SAVE  (14,12),,CNVTDEC    Save registers
+         LR    12,15               Prepare CNVTDEC base register
+         LR    15,13               Prepare a
+         LA    13,72(,13)           new
+         ST    13,8(,15)             save
+         ST    15,4(,13)              area
+         LR    14,0                Output area address to reg 14
+         CVD   1,64(,13)           Convert the value to packed decimal
+         MVC   64-L'EDPATT(L'EDPATT,13),EDPATT   Convert value
+         ED    64-L'EDPATT(L'EDPATT,13),72-4(13)  to decimal digits
+         MVC   0(6,14),64-6(13)    Copy digits to output area
+         L     13,4(,13)           Load address of the higher save area
+         RETURN (14,12)            Restore registers & return
+         DC    0D'0'
+         LTORG ,
+EDPATT   DC    0C' 1234567',C' ',5X'20',X'2120'
+         DC    0D'0'
+         EJECT
+DSLISTW  CSECT
+DSLISTW  RMODE 24
+SAVEAREA DC    (5*9)D'0'           5 72 byte register save areas
+FMTWORK  DC    XL200'0'            MINIFMT work area
+*DYNPARM  DC    XL256'0'           Dynamic allocation parameter area
+LCA      EQU   C'A'-X'40'
+LCJ      EQU   C'J'-X'40'
+LCS      EQU   C'S'-X'40'
+TRTAB    DC    0XL256'0',(C' ')C'.'
+         DC    C' ',(LCA-(*-TRTAB))C'.'
+         DC    9AL1(*-TRTAB),(LCJ-(*-TRTAB))C'.'  LOWER CASE A TO I
+         DC    9AL1(*-TRTAB),(LCS-(*-TRTAB))C'.'  LOWER CASE J TO R
+         DC    8AL1(*-TRTAB),(C'A'-(*-TRTAB))C'.' LOWER CASE S TO Z
+         DC    9AL1(*-TRTAB),(C'J'-(*-TRTAB))C'.' UPPER CASE A TO I
+         DC    9AL1(*-TRTAB),(C'S'-(*-TRTAB))C'.' UPPER CASE J TO R
+         DC    8AL1(*-TRTAB),(C'0'-(*-TRTAB))C'.' UPPER CASE S TO Z
+         DC    10AL1(*-TRTAB),(256-(*-TRTAB))C'.' 0 TO 9
+CAMLST1  CAMLST SEARCH,*-*,*-*,F1DSCB
+CAMLST2  CAMLST SEEK,*-*,*-*,F3DSCB
+F1DSCB   DC    XL140'0'
+F3DSCB   DC    XL140'0'
+CSIPARM  CALL  ,(CSIRSN,CSISEL,CSIRET),VL,MF=L
+CSIPARM2 CALL  ,(CSIRSN,CSISEL,CSIRET2),VL,MF=L
+CSISEL   DC    3CL44' '
+         DC    CL16'X'
+         DC    CL4' '
+         DC    Y(NUMCODES)
+CODES    DC    CL8'NAME'           ASSOCIATED NAME
+*        DC    CL8'VOLSER'
+*        DC    CL8'ENTYPE'         ENTRY TYPE
+*        DC    CL8'TYPE'
+NUMCODES EQU   (*-CODES)/L'CODES
+         DC    7CL8' '
+CSISELL  EQU   *-CSISEL
+LINKPARM LINK  SF=L,EP=IGGCSI00
+CSIRSN   DC    F'0'
+INDEX    DC    CL44' '
+HLQ      DC    CL8' '
+*OFFSET   DC    H'0'
+PAGESIZE DC    H'60'
+PAGEPOS  DC    0H'0',X'7FFF'
+CYLSIZE  DC    H'0'
+         PRINT NOGEN
+OPARM    OPEN  (PRINT,OUTPUT),MF=L
+CPARM    CLOSE PRINT,MF=L
+PRINT    DCB   DSORG=PS,MACRF=PM,DDNAME=SYSPRINT,RECFM=VBA,LRECL=125
+*JFCBDCB  DCB   MACRF=E,DDNAME=FILLMEIN,EXLST=XLIST
+*XLIST    DC    0A(0),AL1(X'80'+7),AL3(JFCB)
+         UCBSCAN MF=(L,SCANPARM)
+         DC    0F'0'
+SCANWORK DC    XL100'0',0F'0'
+SCANUCB  DC    XL48'0',0F'0'
+*JFCB     DC    0XL176'0'
+*         IEFJFCBN ,
+DT       DC    0C'15 OCT 2021 12:07  '
+LEFT     EQU   1+(120-L'HDR)/2
+PAGEHDR  DC    AL2(PAGEHDRL,0),CL(LEFT)'1(DSLIST &SYSDATE &SYSTIME)'
+HDR      DC    C'D S L I S T   F O R   B A T C H'
+         DC    (125-10-L'DT-(*-PAGEHDR))C' '
+DTDD     DC    CL2' ',C' '
+DTMMM    DC    CL3' ',C' '
+DTYYYY   DC    CL4' '
+DTHHMM   DC    0C' 12:07',C' ',X'2120',C':',X'2020',CL2' ',C'PAGE'
+PAGE#    DC    0C' 12345',CL(L'PAGE#)' '
+PAGEHDRL EQU   *-PAGEHDR           BETTER BE 0007D (125)
+SUBHDR1  DC    AL2(SUBHDR1L,0)
+         DC    C' VOLUME  RECFM LRECL BLKSZ DSORG CREDT  XPIRDT'
+         DC    C'  LASTREF  ALLOC   USED  DATA SET NAME'
+SUBHDR1L EQU   *-SUBHDR1
+DETAIL   DC    Y(*-*,0),C' '       Detail line
+DVOLSER  DC    CL6' ',CL2' '
+DRECFM   DC    CL5' ',C' '
+DLRECL   DC    CL5' ',C' '
+DBLKSIZE DC    CL5' ',CL2' '
+DDSORG   DC    CL3' ',C' '
+DCRTD    DC    CL7' ',C' '
+DEXPIRE  DC    CL7' ',C' '
+DREFD    DC    CL7' ',C' '
+DALLOC   DC    CL6' ',C' '
+DUSED    DC    CL6' ',C' '
+DDSNAME  DC    CL44' '
+* RECFM format table
+RECFMTB  DC    AL1(DCBRECL,DCBRECF),C'F'
+         DC    AL1(DCBRECL,DCBRECV),C'V'
+         DC    AL1(DCBRECL,DCBRECU),C'U'
+         DC    AL1(DCBRECBR,DCBRECBR),C'B'
+         DC    AL1(DCBRECSB,DCBRECSB),C'S'
+         DC    AL1(DCBRECTO,DCBRECTO),C'T'
+         DC    AL1(DCBRECCC,DCBRECCA),C'A'
+         DC    AL1(DCBRECCC,DCBRECCM),C'M'
+RECFMTBN EQU   (*-RECFMTB)/3
+* DSORG lookup table
+DSORGTB  DC    AL1(DCBDSGPS,0),CL3'PS'
+         DC    AL1(DCBDSGPS+DCBDSGU,0),CL3'PSU'
+TESTPO   DC    AL1(DCBDSGPO,0),CL3'PO'
+         DC    AL1(DCBDSGPO+DCBDSGU,0),CL3'POU'
+         DC    AL1(DCBDSGIS,0),CL3'IS'
+         DC    AL1(DCBDSGIS+DCBDSGU,0),CL3'ISU'
+         DC    AL1(DCBDSGDA,0),CL3'DA'
+         DC    AL1(DCBDSGDA+DCBDSGU,0),CL3'DAU'
+         DC    AL1(0,DCBACBM),CL3'VS'
+DSORGTBN EQU   (*-DSORGTB)/5
+         DC    AL1(0,0),CL3'??'    Unknown
+SUBHDRL  DC    A(X'80000000'+SUBHDR1)
+PAGENUM  DC    0P'12345',PL(L'PAGENUM)'0'
+DUMPLINE DC    AL2(DUMPLINEL,0),C' '
+DLHEX    DC    CL4' '
+DLDEC    DC    0C' 12345',CL(L'DLDEC)' ',C'  '
+DLWD1    DC    CL8' ',C' '
+DLWD2    DC    CL8' ',CL2' '
+DLWD3    DC    CL8' ',C' '
+DLWD4    DC    CL8' ',C' *'
+DLTXT    DC    CL16' ',C'*'
+DUMPLINEL EQU  *-DUMPLINE
+DLTAB    DC    Y(DLWD1-DUMPLINE+0,DLTXT-DUMPLINE+0)
+         DC    Y(DLWD1-DUMPLINE+2,DLTXT-DUMPLINE+1)
+         DC    Y(DLWD1-DUMPLINE+4,DLTXT-DUMPLINE+2)
+         DC    Y(DLWD1-DUMPLINE+6,DLTXT-DUMPLINE+3)
+         DC    Y(DLWD2-DUMPLINE+0,DLTXT-DUMPLINE+4)
+         DC    Y(DLWD2-DUMPLINE+2,DLTXT-DUMPLINE+5)
+         DC    Y(DLWD2-DUMPLINE+4,DLTXT-DUMPLINE+6)
+         DC    Y(DLWD2-DUMPLINE+6,DLTXT-DUMPLINE+7)
+         DC    Y(DLWD3-DUMPLINE+0,DLTXT-DUMPLINE+8)
+         DC    Y(DLWD3-DUMPLINE+2,DLTXT-DUMPLINE+9)
+         DC    Y(DLWD3-DUMPLINE+4,DLTXT-DUMPLINE+10)
+         DC    Y(DLWD3-DUMPLINE+6,DLTXT-DUMPLINE+11)
+         DC    Y(DLWD4-DUMPLINE+0,DLTXT-DUMPLINE+12)
+         DC    Y(DLWD4-DUMPLINE+2,DLTXT-DUMPLINE+13)
+         DC    Y(DLWD4-DUMPLINE+4,DLTXT-DUMPLINE+14)
+         DC    Y(DLWD4-DUMPLINE+6,DLTXT-DUMPLINE+15)
+DLTABN   EQU   (*-DLTAB)/4         BETTER BE 00010 (16)
+HEXTAB   EQU   *-C'0'
+         DC    C'0123456789ABCDEF'
+CSIHDR   DC    Y(CSIHDRL,0),C' DATA PASSED TO IGGCSI00'
+CSIHDRL  EQU   *-CSIHDR
+CSIRMSG  DC    Y(CSIRMSGL,0),C' DATA RETURNED BY IGGCSI00'
+CSIRMSGL EQU   *-CSIRMSG
+RC       DC    AL1(0)
+*        DC    0D'0'
+FIXTAB   DC    C':;!@#$%¬&&*()_-+={}[]|\~,<>/''',0D'0'
+CSIRET   CSECT
+         DC    A(64*1024)          BYTES IN RETURN AREA
+         DC    2A(0)               REQUIRED & USED SPACE
+         DS    (64*1024-(*-CSIRET))X  RETURNED FIELD DATA
+CSIRET2  DC    A(512)
+         DC    2A(0)
+         DS    (512-(*-CSIRET2))X
+         DCBD  DSORG=QS,DEVD=DA
+         CVT   DSECT=YES
+         IHADVCT ,
+DSCB     DSECT
+         IECSDSL1 1
+         ORG   DSCB
+         IECSDSL1 3
+         IEFUCBOB ,
+         SPACE 1
+* Entries returned by IGGCSI00
+* NON-VSAM DATA SET
+A        DSECT
+AFLAG    DS    B
+ATYPE    DS    C'A'
+ADSN     DS    CL44
+ALEN     DS    H                   Bytes in extended data
+         DS    XL2                 Unknown
+ALEN1    DS    H                   Bytes in 1st extended field (AADSN)
+ALEN2    DS    H                   Bytes in 2nd extended field (AVOLS)
+AADSN    DS    0CL44               Alternate data set name
+AVOLS    DS    0CL6                Volume serial list
+         SPACE 1
+* GDG INDEX
+B        DSECT
+BFLAG    DS    B
+BTYPE    DS    C'B'
+BINDEX   DS    CL44                INDEX NAME
+BLEN     DS    H                   BYTES IN ENTRY
+         DS    XL6                 UNKNOWN
+BDSNAMES DS    0CL44               DATA SETS IN GDG INDEX
+         SPACE 1
+* VSAM CLUSTER
+C        DSECT
+CFLAG    DS    B
+CTYPE    DC    C'C'
+CDSN     DS    CL44
+CLEN     DS    H
+         DS    XL6                 UNKNOWN
+CDATA    DS    CL44                DATA COMPONENT NAME
+CINDEX   DS    CL44                INDEX COMPONENT NAME
+         SPACE 1
+* VSAM DATA COMPONENT
+D        DSECT
+DFLAG    DS    B
+DTYPE    DS    C'D'
+DDSN     DS    CL44
+DLEN     DS    H
+         DS    XL6
+DVOL     DS    CL6
+         SPACE 1
+* VSAM INDEX COMPONENT
+I        DSECT
+IFLAG    DS    B
+ITYPE    DS    C'I'
+IDSN     DS    CL44
+ILEN     DS    H
+         DS    XL6
+IVOL     DS    CL6
+         SPACE 1
+* ALIAS
+X        DSECT
+XFLAG    DS    B
+XTYPE    DS    C'X'
+XDSN     DS    CL44
+XLEN     DS    H
+         DS    XL6
+XRELATED DS    CL44
+         SPACE 1
+         END   DSLIST
