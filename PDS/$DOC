@@ -1,0 +1,135 @@
+                     D S L I S T   F O R   B A T C H
+
+DSLIST for batch is a batch program to create an output data set
+with output similar to the output a TSO user can get using the
+ISPF/PDF DSLIST function.
+
+Use JCL like this to run DSLIST for batch.
+
+//        EXEC PGM=DSLIST,PARM='data set selection pattern'
+//SYSPRINT DD  SYSOUT=*
+
+The data set selection pattern specifies a pattern identical to
+the data set selection pattern a TSO/ISPF user can enter on the
+Dsname level line in the Data Set List utility in ISPF/PDF.
+However, you cannot specify wildcard text in the first index
+level.
+
+DSLIST opereates in task mode, problem state and problem key.  It
+uses no APF restricted z/OS resource.  It does not attempt to
+evade any z/OS security convention.
+
+Debugging code is present in DSLIST; some of this code has been
+commented to avoid littering the output with debugging
+information.
+
+           C O N T E N T S   O F   T H I S   D A T A   S E T
+
+Member
+$DOC     This member
+CSIDUMP  Source for a program to run IGGCSI00 and dump its output.
+         CSIDUMP will require a minor modifiction before it will
+         run in most MVS installations.  This modification will
+         be discussed later in this member.
+DSLIST   The source for the DSLIST program
+MINIFMT  Source for a message format program used by DSLIST.
+OBJECT   Object decks from assembling DSLIST and MINIFMT, with
+         Binder control statements to prepare the DSLIST load
+         module.
+
+     P R E P A R I N G   T H E   D S L I S T   E X E C U T A B L E
+
+You can prepare the DSLIST binary execuitable load module two ways.
+- You can link the object member in this data set
+- You can assemble and link the source members in this data set.
+
+Use JCL like this to assemble and link DSLIST
+
+//ASMCL   PROC
+//C       EXEC PGM=ASMA90,
+               PARM='OBJECT,NODECK,NOTHREAD,XREF(SHORT),BATCH'
+//SYSPRINT DD  SYSOUT=*
+//SYSLIN   DD  DISP=(MOD,PASS),DSN=&&OBJ,UNIT=SYSDA,SPACE=(TRK,(1,1)),
+//             DCB=(RECFM=FB,LRECL=80,BLKSIZE=3200)
+//SYSLIB   DD  DISP=(SHR,PASS),DSN=SYS1.MODGEN
+//         DD  DISP=(SHR,PASS),DSN=SYS1.MACLIB
+//SYSIN    DD  DISP=SHR,DSN=this-data-set(DSLIST)
+//         DD  DISP=SHR,DSN-this-data-set(MINIFMT)
+//L       EXEC PGM=IEWL,PARM='MAP,XREF,LIST'
+//SYSPRINT DD  SYSOUT=*
+//SYSLMOD  DD  DISP=(,CATLG),UNIT=SYSDA,SPACE=(TRK,(1,1,1)),
+//             DSN=&SYSUID..DSLIST.LOAD
+//SYSLIN   DD  DISP=(OLD,DELETE),DSN=&&OBJ
+//         DD  DDNAME=SYSIN
+//        PEND
+//PREP    EXEC PGM=IEFBR14
+//SYSLMOD  DD  DISP=(MOD,DELETE),UNIT=SYSALLDA,SPACE=(TRK,0),
+//             DSN=&SYSUID..DSLIST.LOAD
+//ASMLINK EXEC ASMCL
+//L.SYSIN  DD  *
+ ENTRY DSLIST
+ NAME  DSLIST(R)
+/*
+//
+
+Alter the JCL to specify this data set, and run the job.
+
+Use JCL like this to link edit the object code for DSLIST.
+
+//PREP    EXEC PGM=IEFBR14
+//SYSLMOD  DD  DISP=(MOD,DELETE),UNIT=SYSALLDA,SPACE=(TRK,0),
+//             DSN=&SYSUID..DSLIST.LOAD
+//LINK    EXEC PGM=IEWL,PARM='LIST,MAP,XREF'
+//SYSPRINT DD  SYSOUT=*
+//SYSLMOD  DD  DISP=(,CATLG),UNIT=SYSDA,SPACE=(TRK,(1,1,1)),
+//             DSN=*.PREP.SYSLMOD
+//SYSLIN DD  DISP=SHR,DSN=this-data-set(OBJECT)
+
+Alter the JCL to specify this data set, and run the job.
+
+C S I D U M P
+
+CSIDUMP was written to execute IGGCSI00 and dump the data it
+returned.
+
+Before you assemble CSIDUMP you almost certainly need to alter one
+statement.  Find the statement -
+
+SELECT   DC    CL44'SMYERS.**',CL44'MVSUSER.USERCAT',CL44' '
+
+This statement defines three character strings.  SMYERS.** specifies
+the data sets IGGCSI00 is to look for; you can alter its
+contents by using PARM='xxx' in the JCL used to run CSIDUMP.
+MVSUSER.USERCAT specifies the catalog where the SMYERS data sets
+are cataloged.  Do not alter the third character string.
+
+Link edit and run the modified version of CSIDUMP.
+
+CSIDUMP dumps the parameter list it sent to IGGCSI00, the first
+64 bytes of the data returned by IGGCSI00, and each catalog entry
+returned by IGGCSI00 as a separate entity.  The contents of these
+data arereas are described by SC23-6583 DFSMS Managing Catalogs.
+The CSIFIELD data area - the first data dumped by CSIDUMP are
+also described by the IGGCSINA data area, which is copied from
+MACLIB in both DSLIST and CSIDUMP.
+
+                    H O W   D S L I S T   W O R K S
+
+DSLIST extracts the search parameter from the EXEC statement PARM
+data.  It then extracts the first qualifier from this data, and
+uses IGGCSI00 to obtain the related catalog name for the high
+level qualifier.
+
+DSLIST then analyzes the search index.  It locates the last index
+level in the search index.  If there are no wild card characters
+in this index, it appends .** to the search index specified in the
+EXEC statement PARM data.
+
+It then invokes IGGCSI00 to locate data sets that match the
+search index.  The process to obtain DCB attributes and prepare
+the messages is relatively simple, though there is quite a lot of
+code for the process.
+
+                             S U P P O R T
+
+Contact the author at mvsprog@yahoo.com
